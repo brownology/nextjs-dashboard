@@ -3,36 +3,63 @@ import {z} from 'zod';
 import { sql } from '@vercel/postgres';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+//import State from '../../node_modules/sucrase/dist/types/parser/tokenizer/state.d';
+import { errors } from '../../node_modules/@swc/helpers/scripts/errors';
+
+export type State = {
+  errors?: {
+    customerId?: string[];
+  amount?: string[];
+  status?: string[];
+  };
+  message?: string | null;
+};
 
 const FormSchema = z.object({
     id: z.string(),
-    customerId: z.string(),
-    amount: z.coerce.number(),
-    status: z.enum(['pending', 'paid']),
+    customerId: z.string({
+      invalid_type_error: 'Please select a customer',
+    }),
+    amount: z.coerce.number().gt(0, {message: 'Please enter an amount greater than $0'}),
+    status: z.enum(['pending', 'paid'], {
+      invalid_type_error: 'Please select a status',
+    
+    }),
     date: z.string(),
 });
 
 const CreateInvoice = FormSchema.omit({ id: true, date: true});
 
-export async function createInvoice(formData: FormData){
+export async function createInvoice(prevState: State, formData: FormData){
 
     
-    const rawFormData = {
+    const validatedFields = CreateInvoice.safeParse({
         customerId: formData.get('customerId'),
         amount: formData.get('amount'),
         status: formData.get('status')
-    };
-    const amountInCents = rawFormData.amount * 100;
+    });
+
+    //If form validation fails, return errors early. Otherwise, continue with the database operation.
+    if(!validatedFields.success){
+      return {
+        errors: validatedFields.error.flatten().fieldErrors,
+        message: 'Missing Fields. Failed to create invoice.'
+      };
+    }
+    // Prepare data for insertion into the database
+    const { customerId, amount, status } = validatedFields.data;
+
+    const amountInCents = amount * 100;
     const date = new Date().toISOString().split('T')[0];
     try{
         await sql`
             INSERT INTO invoices (customer_id, amount, status, date)
-            VALUES (${rawFormData.customerId}, ${amountInCents}, ${rawFormData.status}, ${date});
+            VALUES (${customerId}, ${amountInCents}, ${status}, ${date});
         `;
 
     // const rawFormData = Object.fromEntries(formData.entries());
-    console.log(typeof(rawFormData.amount));
-    console.log(rawFormData);
+    console.log(typeof(amount));
+    console.log(validatedFields);
     }catch(e){
         return {
             message: 'Database Error: Failed to create invoice.',
@@ -43,6 +70,7 @@ export async function createInvoice(formData: FormData){
     will be revalidated, and fresh data will be fetched from the server.
     */
     revalidatePath('/dashboard/invoices');
+    redirect('/dashboard/invoices');
 }
 
 const UpdateInvoice = FormSchema.omit({ id: true, date: true });
