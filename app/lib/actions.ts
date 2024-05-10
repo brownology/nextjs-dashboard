@@ -4,7 +4,9 @@ import { sql } from '@vercel/postgres';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 //import State from '../../node_modules/sucrase/dist/types/parser/tokenizer/state.d';
-import { errors } from '../../node_modules/@swc/helpers/scripts/errors';
+// import { errors } from '../../node_modules/@swc/helpers/scripts/errors';
+import { signIn } from '@/auth';
+import { AuthError } from 'next-auth';
 
 export type State = {
   errors?: {
@@ -121,5 +123,23 @@ export async function updateInvoice(
         return {
             message: 'Database Error: Failed to delete invoice.',
         };
+    }
+  }
+
+  export async function authenticate(
+    prevState: string | undefined,
+    formData: FormData) {
+      try{
+        await signIn('credentials', formData);
+      } catch(error){
+        if(error instanceof AuthError){
+          switch(error.type){
+            case 'CredentialsSignin':
+              return 'Invalid credentials. Please try again.';
+              default:
+                return 'Something went wrong. Please try again.';
+        }
+      } 
+      throw error;
     }
   }
